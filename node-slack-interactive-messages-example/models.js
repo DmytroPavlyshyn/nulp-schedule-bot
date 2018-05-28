@@ -1,4 +1,7 @@
 const axios = require('axios');
+const cheerio = require("cheerio")
+const request = require('request')
+
 
 // Create a Promise that resolves after a full turn of the event loop
 // Used since Promise.resolve() will resolve too early
@@ -9,9 +12,9 @@ function resolveLater(value, ms = 0) {
 // A fake users model that resembles what you might have for a database-backed application
 exports.users = {
   staticUser: {
-    agreedToPolicy: false,
-    setPolicyAgreementAndSave(isAgreed) {
-      this.agreedToPolicy = isAgreed;
+    TeachOrStud: false,
+    TeacherOrStudent(isAgreed) {
+      this.TeachOrStud = isAgreed;
       return resolveLater(this);
     },
     kudosCount: 0,

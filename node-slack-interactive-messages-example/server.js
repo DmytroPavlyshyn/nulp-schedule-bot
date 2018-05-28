@@ -5,6 +5,34 @@ const { createMessageAdapter } = require('@slack/interactive-messages');
 const { WebClient } = require('@slack/client');
 const { users, neighborhoods } = require('./models');
 const axios = require('axios');
+const cheerio = require('cheerio')
+const request = require('request')
+
+var inst = []
+var kafs = []
+var namesOfTeachers = []
+var groups = []
+var chosenInstValue = "1"
+var chosenGroupValue = "1"
+var chosenKafValue = "1"
+var chosenTeacherValue = "1"
+var timetableURL = "http://lp.edu.ua/rozklad-dlya-studentiv?inst=8&group=11241&semestr=1&semest_part=1"
+
+
+
+
+
+
+
+
+ 
+
+
+
+
+
+
+
 
 // Read the verification token from the environment variables
 const slackVerificationToken = process.env.SLACK_VERIFICATION_TOKEN;
@@ -41,23 +69,55 @@ slackInteractions.action('accept_tos', (payload, respond) => {
 
   // Use the data model to persist the action
   users.findBySlackId(payload.user.id)
-    .then(user => user.setPolicyAgreementAndSave(payload.actions[0].value === 'accept'))
+    .then(user => user.TeacherOrStudent(payload.actions[0].value === 'stud'))
     .then((user) => {
       // After the asynchronous work is done, call `respond()` with a message object to update the
       // message.
-      let confirmation;
-      if (user.agreedToPolicy) {
-        confirmation = 'Thank you for agreeing to the terms of service';
+      let choice_;
+      if (user.TeachOrStud) {
+        //student
+        timetableURL = "http://lp.edu.ua/rozklad-dlya-studentiv?inst=8&group=11241&semestr=1&semest_part=1"
+        request(timetableURL, function (error, response, body) {
+          var $ = cheerio.load(body);
+            $('#stud select[name="inst"]').find('option').each((index, option) => {
+              const $option = $(option)
+              const value=$option.attr('value');
+              if (value){
+                  inst.push({
+                      value,
+                      text: $option.text()
+                  })  
+              }
+          });
+        });
+        console.log(inst)
+        respond(interactiveMenuInst)
       } else {
-        confirmation = 'You have denied the terms of service. You will no longer have access to this app.';
+        //teacher
+        timetableURL="http://lp.edu.ua/rozklad-dlya-vykladachiv?kaf=8557&fnsn=%D0%91%D1%80%D0%B8%D0%BB%D0%B8%D0%BD%D1%81%D1%8C%D0%BA%D0%B8%D0%B9+%D0%A0%D0%BE%D0%BC%D0%B0%D0%BD&semestr=1&semest_part=1"
+        request(timetableURL, function (error, response, body) {
+          var $ = cheerio.load(body);
+            $('#vykl select[name="kaf"]').find('option').each((index, option) => {
+              const $option = $(option)
+              const value=$option.attr('value');
+              if (value){
+                  kafs.push({
+                      value,
+                      text: $option.text()
+                  })  
+              }
+          });
+        });
+        console.log(kafs)
+        respond(interactiveMenuKaf)
       }
-      respond({ text: confirmation });
+      respond({ text: choice_ });
     })
     .catch((error) => {
       // Handle errors
       console.error(error);
       respond({
-        text: 'An error occurred while recording your agreement choice.'
+        text: 'An error occurred while recording your choice.'
       });
     });
 
@@ -68,151 +128,276 @@ slackInteractions.action('accept_tos', (payload, respond) => {
   return reply;
 });
 
+
+
+
+
 slackInteractions
-  .options({ callbackId: 'pick_sf_neighborhood', within: 'interactive_message' }, (payload) => {
+  .options({ callbackId: 'pick_inst', within: 'interactive_message' }, (payload) => {
     console.log(`The user ${payload.user.name} in team ${payload.team.domain} has requested options`);
 
-    // Gather possible completions using the user's input
-    return neighborhoods.fuzzyFind(payload.value)
-      // Format the data as a list of options
-      .then(formatNeighborhoodsAsOptions)
-      .catch((error) => {
-        console.error(error);
-        return { options: [] };
-      });
+
+
+    
+
+
+      console.log(inst)
+      return {
+        options: inst
+      }
   })
-  .action('pick_sf_neighborhood', (payload, respond) => {
+  .action('pick_inst', (payload, respond) => {
     console.log(`The user ${payload.user.name} in team ${payload.team.domain} selected from a menu`);
 
-    // Use the data model to persist the action
-    neighborhoods.find(payload.actions[0].selected_options[0].value)
-      // After the asynchronous work is done, call `respond()` with a message object to update the
-      // message.
-      .then((neighborhood) => {
-        respond({
-          text: payload.original_message.text,
-          attachments: [{
-            title: neighborhood.name,
-            title_link: neighborhood.link,
-            text: 'One of the most interesting neighborhoods in the city.',
-          }],
-        });
-      })
+    inst=[];
+    console.log(inst)
+
+    
+
+
+
+
+    chosenInstValue=payload.actions[0].selected_options[0].value;
+    
+    timetableURL="http://lp.edu.ua/rozklad-dlya-studentiv?inst="+chosenInstValue+"&group=&semestr=1&semest_part=1";
+
+    request(timetableURL, function (error, response, body) {
+      var $ = cheerio.load(body);
+      $('#stud select[name="group"]').find('option').each((index, option) => {
+          const $option = $(option)
+          const value=$option.attr('value');
+          groups.push({
+              value,
+              text: $option.text()
+          })
+      });
+    });
+    respond(interactiveMenuGroup)
       .catch((error) => {
-        // Handle errors
         console.error(error);
         respond({
           text: 'An error occurred while finding the neighborhood.'
         });
       });
 
-    // Before the work completes, return a message object that is the same as the original but with
-    // the interactive elements removed.
     const reply = payload.original_message;
     delete reply.attachments[0].actions;
     return reply;
   });
 
-slackInteractions.action({ type: 'dialog_submission' }, (payload, respond) => {
-  // `payload` is an object that describes the interaction
-  console.log(`The user ${payload.user.name} in team ${payload.team.domain} submitted a dialog`);
 
-  // Check the values in `payload.submission` and report any possible errors
-  const errors = validateKudosSubmission(payload.submission);
-  if (errors) {
-    return errors;
-  } else {
-    setTimeout(() => {
-      const partialMessage = `<@${payload.user.id}> just gave kudos to <@${payload.submission.user}>.`;
 
-      // When there are no errors, after this function returns, send an acknowledgement to the user
-      respond({
-        text: partialMessage,
+
+
+
+  slackInteractions
+  .options({ callbackId: 'pick_group', within: 'interactive_message' }, (payload) => {
+    console.log(`The user ${payload.user.name} in team ${payload.team.domain} has requested options`);
+    console.log(groups)
+      return {
+        options: groups
+      }
+  })
+  .action('pick_group', (payload, respond) => {
+    console.log(`The user ${payload.user.name} in team ${payload.team.domain} selected from a menu`);
+    chosenGroupValue=payload.actions[0].selected_options[0].value;
+    
+    groups=[]
+    console.log(groups)
+    respond({
+        text: "http://lp.edu.ua/rozklad-dlya-studentiv?inst="+chosenInstValue+"&group="+chosenGroupValue+"&semestr=1&semest_part=1"
+    })
+      .catch((error) => {
+        console.error(error);
+        respond({
+          text: 'An error occurred while finding the neighborhood.'
+        });
+      });
+    
+    const reply = payload.original_message;
+    delete reply.attachments[0].actions;
+    return reply;
+  });
+
+
+
+
+
+
+  slackInteractions
+  .options({ callbackId: 'pick_kaf', within: 'interactive_message' }, (payload) => {
+    console.log(`The user ${payload.user.name} in team ${payload.team.domain} has requested options`);
+
+
+   
+
+
+
+      return {
+        options: kafs
+      }
+  })
+  .action('pick_kaf', (payload, respond) => {
+    console.log(`The user ${payload.user.name} in team ${payload.team.domain} selected from a menu`);
+    kafs=[]
+
+
+    
+
+
+
+
+    chosenKafValue=payload.actions[0].selected_options[0].value;
+    console.log(chosenKafValue)
+    timetableURL="http://lp.edu.ua/rozklad-dlya-vykladachiv?kaf="+chosenKafValue+"&fnsn=&semestr=1&semest_part=1"
+
+    request(timetableURL, function (error, response, body) {
+      var $ = cheerio.load(body);
+      $('#vykl select[name="fnsn"]').find('option').each((index, option) => {
+          const $option = $(option)
+          const value=$option.attr('value');
+          namesOfTeachers.push({
+              value,
+              text: $option.text()
+          })
+      });
+    });
+    respond(interactiveMenuTeachers)
+      .catch((error) => {
+        console.error(error);
+        respond({
+          text: 'An error occurred while finding the neighborhood.'
+        });
       });
 
-      // The app does some work using information in the submission
-      users.findBySlackId(payload.submission.id)
-        .then(user => user.incrementKudosAndSave(payload.submission.comment))
-        .then((user) => {
-          // After the asynchronous work is done, call `respond()` with a message object to update
-          // the message.
-          respond({
-            text: `${partialMessage} That makes a total of ${user.kudosCount}! :balloon:`,
-            replace_original: true,
-          });
-        })
-        .catch((error) => {
-          // Handle errors
-          console.error(error);
-          respond({ text: 'An error occurred while incrementing kudos.' });
+    const reply = payload.original_message;
+    delete reply.attachments[0].actions;
+    return reply;
+  });
+
+
+
+
+  slackInteractions
+  .options({ callbackId: 'pick_teach', within: 'interactive_message' }, (payload) => {
+    console.log(`The user ${payload.user.name} in team ${payload.team.domain} has requested options`);
+
+      return {
+        options: namesOfTeachers
+      }
+  })
+  .action('pick_teach', (payload, respond) => {
+    console.log(`The user ${payload.user.name} in team ${payload.team.domain} selected from a menu`);
+    chosenTeacherValue=payload.actions[0].selected_options[0].value;
+    namesOfTeachers =[];
+    var link=chosenTeacherValue.replace(/ /g, '+')
+    kafs=[]
+    namesOfTeachers=[]
+    respond({
+        text: "http://lp.edu.ua/rozklad-dlya-vykladachiv?kaf="+chosenKafValue+"&fnsn="+ link +"&semestr=1&semest_part=1"
+    })
+      .catch((error) => {
+        console.error(error);
+        respond({
+          text: 'An error occurred while finding the neighborhood.'
         });
-    });
-  }
-});
+      });
+    
+    const reply = payload.original_message;
+    delete reply.attachments[0].actions;
+    return reply;
+  });
+
+
 
 
 // Example interactive messages
 const interactiveButtons = {
-  text: 'The terms of service for this app are _not really_ here: <https://unsplash.com/photos/bmmcfZqSjBU>',
+  text: 'Are you looking for student`s or teacher`s schedule?',
   response_type: 'in_channel',
   attachments: [{
-    text: 'Do you accept the terms of service?',
+    text: '',
     callback_id: 'accept_tos',
     actions: [
       {
         name: 'accept_tos',
-        text: 'Yes',
-        value: 'accept',
+        text: 'Student',
+        value: 'stud',
         type: 'button',
         style: 'primary',
       },
       {
         name: 'accept_tos',
-        text: 'No',
-        value: 'deny',
+        text: 'Teacher',
+        value: 'teach',
         type: 'button',
-        style: 'danger',
+        style: 'primary',
       },
     ],
   }],
 };
 
-const interactiveMenu = {
-  text: 'San Francisco is a diverse city with many different neighborhoods.',
+const interactiveMenuInst = {
+  text: 'Choose institute.',
   response_type: 'in_channel',
   attachments: [{
-    text: 'Explore San Francisco',
-    callback_id: 'pick_sf_neighborhood',
+    text: '',
+    callback_id: 'pick_inst',//pick_sf_neighborhood
     actions: [{
-      name: 'neighborhood',
-      text: 'Choose a neighborhood',
+      name: 'institute',//neighborhood
+      text: 'Choose an institute',//choose a neighborhood
       type: 'select',
       data_source: 'external',
     }],
   }],
 };
 
-const dialog = {
-  callback_id: 'kudos_submit',
-  title: 'Give kudos',
-  submit_label: 'Give',
-  elements: [
-    {
-      label: 'Teammate',
+const interactiveMenuGroup = {
+  text: 'Choose group.',
+  response_type: 'in_channel',
+  attachments: [{
+    text: '',
+    callback_id: 'pick_group',//pick_sf_neighborhood
+    actions: [{
+      name: 'group',//neighborhood
+      text: 'Choose a group',//choose a neighborhood
       type: 'select',
-      name: 'user',
-      data_source: 'users',
-      placeholder: 'Teammate Name'
-    },
-    {
-      label: 'Comment',
-      type: 'text',
-      name: 'comment',
-      placeholder: 'Thanks for helping me with my project!',
-      hint: 'Describe why you think your teammate deserves kudos.',
-    },
-  ],
+      data_source: 'external',
+    }],
+  }],
 };
+
+const interactiveMenuKaf = {
+  text: 'Choose kaf',
+  response_type: 'in_channel',
+  attachments: [{
+    text: '',
+    callback_id: 'pick_kaf',//pick_sf_neighborhood
+    actions: [{
+      name: 'kafedra',//neighborhood
+      text: 'Choose a kafedra',//choose a neighborhood
+      type: 'select',
+      data_source: 'external',
+    }],
+  }],
+};
+
+const interactiveMenuTeachers = {
+  text: 'Choose teacher',
+  response_type: 'in_channel',
+  attachments: [{
+    text: '',
+    callback_id: 'pick_teach',//pick_sf_neighborhood
+    actions: [{
+      name: 'teacher',//neighborhood
+      text: 'Choose teacher`s name',//choose a neighborhood
+      type: 'select',
+      data_source: 'external',
+    }],
+  }],
+};
+
+
 
 // Slack slash command handler
 function slackSlashCommand(req, res, next) {
@@ -222,16 +407,6 @@ function slackSlashCommand(req, res, next) {
       res.json(interactiveButtons);
     } else if (type === 'menu') {
       res.json(interactiveMenu);
-    } else if (type === 'dialog') {
-      res.send();
-      web.dialog.open({
-        trigger_id: req.body.trigger_id,
-        dialog,
-      }).catch((error) => {
-        return axios.post(req.body.response_url, {
-          text: `An error occurred while opening the dialog: ${error.message}`,
-        });
-      }).catch(console.error);
     } else {
       res.send('Use this command followed by `button`, `menu`, or `dialog`.');
     }
